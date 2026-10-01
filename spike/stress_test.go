@@ -1,15 +1,12 @@
 package main
 
 import (
-	"os/signal"
 	"runtime"
 	"sync"
-	"syscall"
 	"testing"
 )
 
 func TestParallelGCStress(t *testing.T) {
-	signal.Reset(syscall.SIGXCPU) // let JSC own its GC signal
 	load()
 	setupCallbacks()
 	es := make([]*Engine, 6)

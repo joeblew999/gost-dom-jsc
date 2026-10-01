@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 	"sync"
 	"time"
@@ -18,10 +19,13 @@ func newNode(n string) *node {
 	return &node{name: n, attrs: map[string]string{}, data: map[string]string{}}
 }
 
+var failed int
+
 func check(label string, got, want string) {
 	mark := "PASS"
 	if got != want {
 		mark = "FAIL"
+		failed++
 	}
 	fmt.Printf("  [%s] %-58s => %s\n", mark, label, got)
 }
@@ -216,4 +220,10 @@ func main() {
 	}
 	wg.Wait()
 	fmt.Printf("  4 contexts in parallel: %v in %v\n", res, time.Since(t).Round(time.Millisecond))
+	fmt.Printf("  OS: %s/%s\n", runtime.GOOS, runtime.GOARCH)
+	if failed > 0 {
+		fmt.Printf("%d check(s) FAILED\n", failed)
+		os.Exit(1)
+	}
+	fmt.Println("all checks passed")
 }

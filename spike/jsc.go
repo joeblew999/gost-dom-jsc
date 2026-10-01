@@ -62,9 +62,15 @@ type classDef struct {
 }
 
 func load() {
-	lib, err := purego.Dlopen("libjavascriptcoregtk-6.0.so.1", purego.RTLD_NOW|purego.RTLD_GLOBAL)
+	var lib uintptr
+	var err error
+	for _, name := range libNames() {
+		if lib, err = purego.Dlopen(name, purego.RTLD_NOW|purego.RTLD_GLOBAL); err == nil {
+			break
+		}
+	}
 	if err != nil {
-		panic(err)
+		panic(fmt.Sprintf("JavaScriptCore not found (tried %v): %v", libNames(), err))
 	}
 	reg := func(fptr any, name string) { purego.RegisterLibFunc(fptr, lib, name) }
 	reg(&JSGlobalContextCreate, "JSGlobalContextCreate")
@@ -94,6 +100,13 @@ func load() {
 	reg(&JSGarbageCollect, "JSGarbageCollect")
 	reg(&JSValueToBoolean, "JSValueToBoolean")
 	reg(&JSValueProtect, "JSValueProtect")
+}
+
+func libNames() []string {
+	if runtime.GOOS == "darwin" {
+		return []string{"/System/Library/Frameworks/JavaScriptCore.framework/JavaScriptCore"}
+	}
+	return []string{"libjavascriptcoregtk-6.0.so.1", "libjavascriptcoregtk-4.1.so.0", "libjavascriptcoregtk-4.0.so.18"}
 }
 
 func goStr(s strRef) string {

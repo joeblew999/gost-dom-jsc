@@ -12,20 +12,21 @@ Full proposal, design notes, benchmarks and checklist: `docs/2026-10-01-01-gost-
 
 - 20/20 Web-IDL behaviour checks pass: classes, inheritance, `instanceof`, prototype accessors, indexed + named handlers, Go errors → JS `TypeError`, promises from Go, finalizers.
 - 306 classes use only 7 purego callbacks (one shared `GoFunction` JSClass + two instance JSClasses, dispatch via private data).
-- **Parallel GC stress test passes**: 6 contexts on separate goroutines × 400k Go-backed DOM ops each, ~56 s on 1 vCPU, no crash. Passed with JSC's default GC signal and with `JSC_SIGNAL_FOR_GC=24`. Not yet run under `-race` or on macOS.
+- **Parallel GC stress test passes**: 6 contexts on separate goroutines × 400k Go-backed DOM ops each, ~55 s on 1 vCPU, no crash, with JSC's default GC signal and with `JSC_SIGNAL_FOR_GC=24`. Not yet run under `-race`.
 - JS speed ≈ V8; each Go↔JS crossing ≈ 3× slower than V8's cgo.
 
 ## Run the spike
 
-Linux:
+The library is picked per OS in `libNames()` (`jsc.go`): JavaScriptCore.framework on macOS, `libjavascriptcoregtk` 6.0 → 4.1 → 4.0 on Linux.
+
 ```
-sudo apt-get install libjavascriptcoregtk-6.0-1
+# Linux only: sudo apt-get install libjavascriptcoregtk-6.0-1
 cd spike
-CGO_ENABLED=0 go run .
+CGO_ENABLED=0 go run .            # exits non-zero if any check fails
 CGO_ENABLED=0 go test -run TestParallelGCStress -v .
 ```
 
-macOS: `jsc.go` currently hardcodes the Linux library name. First task on a Mac is to `Dlopen` `/System/Library/Frameworks/JavaScriptCore.framework/JavaScriptCore` when `runtime.GOOS == "darwin"`. Then check whether the JIT is active in an unsigned test binary (compare `fib(30)` timing; ~15 ms = JIT, much slower = interpreter).
+CI (`.github/workflows/spike.yml`) runs both on `ubuntu-latest` and `macos-latest` on every push. Check the macOS job first: it answers whether the spike works on macOS and whether the JIT is active (look at `fib(30)`: ~15 ms = JIT, much slower = interpreter).
 
 ## Testing on other OSes: irgo-windows-vm
 
@@ -37,7 +38,7 @@ The two repos inform each other through issues:
 
 ## Next steps, in order
 
-1. Make the spike load on macOS and rerun checks, benchmarks and the stress test there (host Mac first; then a clean macOS guest via irgo for the unsigned-binary JIT check).
+1. Check the macOS CI result. If it fails, fix on the host Mac. Then use a clean macOS guest via irgo to confirm the JIT in an unsigned binary.
 2. Run the stress test with `-race` (expect it to be slow).
 3. Post the proposal upstream: `gh issue create -R gost-dom/browser --title "Proposal: cgo-free JavaScriptCore engine via purego (spike results + implementation checklist)" --body-file docs/2026-10-01-01-gost-dom-jsc-purego-issue.md`
 4. `gh repo fork gost-dom/browser --clone`, then work the checklist in the proposal: remaining risks first (ES modules, object identity, unhandled rejections), then `scripting/jscengine/` mirroring `scripting/sobekengine/`, then the `scripttests` acceptance suites, run on Linux and macOS via irgo.
@@ -48,3 +49,11 @@ The two repos inform each other through issues:
 - JSC sweeps lazily, so finalizers lag. Don't treat a rising handle count as a leak until after churn + GC.
 - JSC logs `Overriding existing handler for signal 10`. Harmless so far.
 - The Gost-DOM engine contract is under `scripting/internal/js/`, so the adapter must live in-tree in the fork.
+
+## Spike shortcuts: don't copy these into `jscengine`
+
+- **`engines` map has no lock.** It maps JSC context → engine and is read from every callback. The stress test only works because all engines are created before the goroutines start. Use a lock, or store the engine pointer somewhere reachable from the context (e.g. private data on the global object).
+- **One global handle table behind one mutex.** Every callback locks it, which adds to the crossing cost and serialises parallel tests. Use per-engine tables.
+- **`throwTypeError` looks up `TypeError` on every throw** and `define()` re-evaluates `Object.defineProperty` and `true` on every call. Cache these per engine.
+- **`go vet` warns "possible misuse of unsafe.Pointer"** where C pointers arrive as `uintptr` (`argv`, `exc`). Expected with purego callbacks; give the real code typed pointer parameters where purego allows it.
+- **No `JSGlobalContextRelease` / unprotect** anywhere. The real adapter needs a clean shutdown path per context.
