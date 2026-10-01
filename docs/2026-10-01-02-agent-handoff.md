@@ -27,12 +27,20 @@ CGO_ENABLED=0 go test -run TestParallelGCStress -v .
 
 macOS: `jsc.go` currently hardcodes the Linux library name. First task on a Mac is to `Dlopen` `/System/Library/Frameworks/JavaScriptCore.framework/JavaScriptCore` when `runtime.GOOS == "darwin"`. Then check whether the JIT is active in an unsigned test binary (compare `fib(30)` timing; ~15 ms = JIT, much slower = interpreter).
 
+## Testing on other OSes: irgo-windows-vm
+
+[joeblew999/irgo-windows-vm](https://github.com/joeblew999/irgo-windows-vm) controls macOS and Windows guests through UTM, has an MCP server, and is cgo-free like this repo. Use it to run the spike and, later, the `jscengine` acceptance suites on OSes other than the host (clean macOS guest, Linux guest, Windows for comparing the other engines).
+
+The two repos inform each other through issues:
+- What this repo needs from irgo: [joeblew999/irgo-windows-vm#4](https://github.com/joeblew999/irgo-windows-vm/issues/4). Add to it when a new need comes up; don't build VM tooling here.
+- irgo is still being updated, so read its `CLAUDE.md` / `AGENTS.md` for the current way to drive guests rather than assuming.
+
 ## Next steps, in order
 
-1. Make the spike load on macOS and rerun checks, benchmarks and the stress test there.
+1. Make the spike load on macOS and rerun checks, benchmarks and the stress test there (host Mac first; then a clean macOS guest via irgo for the unsigned-binary JIT check).
 2. Run the stress test with `-race` (expect it to be slow).
 3. Post the proposal upstream: `gh issue create -R gost-dom/browser --title "Proposal: cgo-free JavaScriptCore engine via purego (spike results + implementation checklist)" --body-file docs/2026-10-01-01-gost-dom-jsc-purego-issue.md`
-4. `gh repo fork gost-dom/browser --clone`, then work the checklist in the proposal: remaining risks first (ES modules, object identity, unhandled rejections), then `scripting/jscengine/` mirroring `scripting/sobekengine/`, then the `scripttests` acceptance suites.
+4. `gh repo fork gost-dom/browser --clone`, then work the checklist in the proposal: remaining risks first (ES modules, object identity, unhandled rejections), then `scripting/jscengine/` mirroring `scripting/sobekengine/`, then the `scripttests` acceptance suites, run on Linux and macOS via irgo.
 
 ## Key gotchas
 
