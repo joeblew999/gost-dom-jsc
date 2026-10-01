@@ -1,0 +1,35 @@
+# Move to .github/workflows/spike.yml (the GitHub connector can't write workflow files):
+#   git mv ci/spike.yml .github/workflows/spike.yml
+name: spike
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  spike:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      CGO_ENABLED: "0"
+    defaults:
+      run:
+        working-directory: spike
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: spike/go.sum
+      - name: Install JavaScriptCore (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libjavascriptcoregtk-6.0-1
+      - name: Build (cgo disabled)
+        run: go build -o spike .
+      - name: Behaviour checks + benchmarks
+        run: ./spike
+      - name: Parallel GC stress test
+        run: go test -run TestParallelGCStress -v -timeout 15m .
